@@ -1,12 +1,12 @@
-# requirements.txt (Version 3 - mit festen Versionen)
+# requirements.txt (Version 4 - Final)
 
-streamlit>=1.33.0
-google-generativeai>=0.5.4
-pinecone-client==3.2.2  # Ja, der Client heißt jetzt so in der Installation
-langchain-pinecone>=0.1.1
-langchain-google-genai>=1.0.3
-langchain>=0.1.20
-langchain_community>=0.0.38
-notion-client>=2.2.0
-lark>=1.1.9
-python-dotenv>=1.0.1
+streamlit
+google-generativeai
+pinecone>=3.2.2,<4.0.0  # Spezifiziert eine kompatible Version von pinecone
+langchain-pinecone
+langchain-google-genai
+langchain
+langchain_community
+notion-client
+lark
+python-dotenv
