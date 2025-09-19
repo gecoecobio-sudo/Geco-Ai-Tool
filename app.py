@@ -1,8 +1,8 @@
-# app.py (Version 3 - Final & Correct Secrets Handling)
+# app.py (Final Version)
 
 import streamlit as st
 from langchain_google_genai import GoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
+from langchain_pinecone.vectorstores import Pinecone
 from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
@@ -12,30 +12,30 @@ import os
 st.set_page_config(page_title="Franchise KI-Assistent", layout="wide")
 st.title("🤖 Franchise Handbuch KI-Assistent")
 
-# API-Schlüssel aus Streamlit Secrets laden und als Umgebungsvariablen setzen
-# Dies ist der entscheidende, korrigierte Teil
+# API-Schlüssel aus Streamlit Secrets laden
 PINECONE_API_KEY = st.secrets.get("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT = st.secrets.get("PINECONE_ENVIRONMENT")
 PINECONE_INDEX_NAME = st.secrets.get("PINECONE_INDEX_NAME")
 GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY")
 
-# Setze die Umgebungsvariablen, damit LangChain sie finden kann
+# Setze die Umgebungsvariablen, damit LangChain sie automatisch finden kann
 os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
 os.environ["PINECONE_ENVIRONMENT"] = PINECONE_ENVIRONMENT
 
 # --- RAG Kette initialisieren ---
 @st.cache_resource
 def get_rag_chain():
+    """Initialisiert die RAG-Kette und speichert sie im Cache."""
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=GOOGLE_API_KEY)
     
-    vectorstore = PineconeVectorStore.from_existing_index(
+    vectorstore = Pinecone.from_existing_index(
         index_name=PINECONE_INDEX_NAME, 
         embedding=embeddings, 
         namespace="handbuch-api-mvp"
     )
     retriever = vectorstore.as_retriever()
     
-    llm = GoogleGenerativeAI(model="gemini-2.5-pro", google_api_key=GOOGLE_API_KEY)
+    llm = GoogleGenerativeAI(model="gemini-1.5-pro-latest", google_api_key=GOOGLE_API_KEY)
     
     template = """Du bist ein hilfreicher KI-Assistent für Franchisenehmer. Deine Kernbotschaft ist immer "Keine Panik, das ist schaffbar." 
     Antworte auf die Frage des Nutzers ausschließlich basierend auf dem folgenden Kontext aus dem offiziellen Handbuch.
@@ -59,9 +59,10 @@ def get_rag_chain():
     )
     return rag_chain
 
+# Lade die RAG-Kette. Streamlit führt dies nur einmal aus.
 rag_chain = get_rag_chain()
 
-# --- Chat-Interface (unverändert) ---
+# --- Chat-Interface ---
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Hallo! Wie kann ich dir heute mit dem Handbuch helfen?"}]
 
