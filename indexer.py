@@ -1,3 +1,5 @@
+# indexer.py (Version 3 - mit korrekter Einrückung)
+
 import os
 import pinecone
 from datetime import datetime, timezone
@@ -24,11 +26,9 @@ def get_last_run_timestamp():
     except FileNotFoundError:
         return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
-def set_last_run_timestamp():
+def set_last_run_timestamp(start_time):
     with open(LAST_RUN_FILE, "w") as f:
-        # Wichtig: Wir schreiben den Zeitstempel des *Starts* des Laufs
-        # um keine Änderungen zu verpassen, die während des Laufs passieren.
-        f.write(datetime.now(timezone.utc).isoformat())
+        f.write(start_time.isoformat())
 
 def main():
     start_time = datetime.now(timezone.utc)
@@ -39,51 +39,45 @@ def main():
     loader = NotionDBLoader(
         integration_token=NOTION_TOKEN,
         database_id=NOTION_DATABASE_ID,
-        # Diese Anfrage holt nur Seiten, die seit dem letzten Lauf geändert wurden
         request_filter={"filter": {"timestamp": "last_edited_time", "last_edited_time": {"after": last_run_time.isoformat()}}}
     )
     
     docs_to_update = loader.load()
 
-  if not docs_to_update:
+    if not docs_to_update:
         print("Keine geänderten Dokumente in Notion gefunden. Prozess beendet.")
         return
 
     print(f"{len(docs_to_update)} geänderte Dokumente gefunden. Werden verarbeitet...")
 
-    # 2. Initialisiere Vektor-Store direkt mit der LangChain-Methode
+    # 2. Initialisiere Vektor-Store
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=GOOGLE_API_KEY)
     
-    # Diese Methode ist der moderne Weg, sich mit einem existierenden Index zu verbinden
     vectorstore = PineconeVectorStore.from_existing_index(
         index_name=PINECONE_INDEX_NAME, 
         embedding=embeddings, 
         namespace="handbuch-api-mvp"
-        # Pinecone API Key & Environment werden hier automatisch aus den Umgebungsvariablen gelesen
     )
 
     # 3. Teile Dokumente und füge sie hinzu (Upsert)
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs_to_index = text_splitter.split_documents(docs_to_update)
     
-    # Die IDs der Vektoren, die wir hinzufügen/überschreiben
     doc_ids_to_upsert = [doc.metadata['id'] for doc in docs_to_update]
     
-    # Da eine geänderte Seite zu neuen Chunks führen kann, ist es am sichersten,
-    # erst alle alten Chunks für die geänderte Seite zu löschen und dann die neuen hinzuzufügen.
-    vectorstore.delete(filter={"notion_id": {"$in": doc_ids_to_upsert}})
-    print(f"Alte Vektoren für {len(doc_ids_to_upsert)} Dokumente gelöscht.")
-    
-    # Füge die neuen/aktualisierten Chunks hinzu
-    # Wir fügen die Notion-Seiten-ID zu den Metadaten jedes Chunks hinzu
+    # Sicherster Weg: erst alte Chunks löschen, dann neue hinzufügen.
+    # Wir fügen die Notion-ID als Metadaten hinzu, um sie gezielt löschen zu können.
     for doc in docs_to_index:
         doc.metadata['notion_id'] = doc.metadata['id']
         
+    vectorstore.delete(filter={"notion_id": {"$in": doc_ids_to_upsert}})
+    print(f"Alte Vektoren für {len(doc_ids_to_upsert)} Dokumente gelöscht.")
+    
     vectorstore.add_documents(docs_to_index)
     print(f"{len(docs_to_index)} neue Vektor-Abschnitte hinzugefügt.")
     
     # 4. Zeitstempel aktualisieren, wenn alles erfolgreich war
-    set_last_run_timestamp()
+    set_last_run_timestamp(start_time)
     print(f"Index erfolgreich aktualisiert. Neuer Zeitstempel: {start_time.isoformat()}")
 
 if __name__ == "__main__":
