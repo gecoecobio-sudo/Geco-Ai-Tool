@@ -1,3 +1,5 @@
+# .github/workflows/update_index.yml (Finale Version)
+
 name: Nightly Notion Index Update
 
 on:
@@ -10,12 +12,19 @@ on:
 jobs:
   update-index:
     runs-on: ubuntu-latest
+    
+    # --- ANFANG DER KORREKTUR ---
+    # Gib dem Job die Berechtigung, den Code im Repository zu ändern (für den git push).
+    permissions:
+      contents: write
+    # --- ENDE DER KORREKTUR ---
+      
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -34,12 +43,11 @@ jobs:
           NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
         run: python indexer.py
         
-      # Schritt zum Speichern des Zeitstempels zurück ins Repository
       - name: Commit and push timestamp file
         run: |
           git config --global user.name 'github-actions'
           git config --global user.email 'github-actions@github.com'
           git add last_run_timestamp.txt
-          # Commit nur, wenn es Änderungen gibt
+          # Commit nur, wenn die Datei sich geändert hat
           git diff --staged --quiet || git commit -m "Update last run timestamp"
           git push
