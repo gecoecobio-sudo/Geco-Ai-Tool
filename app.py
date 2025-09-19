@@ -26,7 +26,7 @@ os.environ["PINECONE_ENVIRONMENT"] = PINECONE_ENVIRONMENT
 # --- RAG Kette initialisieren ---
 @st.cache_resource
 def get_rag_chain():
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-004", google_api_key=GOOGLE_API_KEY)
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=GOOGLE_API_KEY)
     
     vectorstore = PineconeVectorStore.from_existing_index(
         index_name=PINECONE_INDEX_NAME, 
@@ -35,7 +35,7 @@ def get_rag_chain():
     )
     retriever = vectorstore.as_retriever()
     
-    llm = GoogleGenerativeAI(model="gemini-1.5-pro-latest", google_api_key=GOOGLE_API_KEY)
+    llm = GoogleGenerativeAI(model="gemini-2.5-pro", google_api_key=GOOGLE_API_KEY)
     
     template = """Du bist ein hilfreicher KI-Assistent für Franchisenehmer. Deine Kernbotschaft ist immer "Keine Panik, das ist schaffbar." 
     Antworte auf die Frage des Nutzers ausschließlich basierend auf dem folgenden Kontext aus dem offiziellen Handbuch.
