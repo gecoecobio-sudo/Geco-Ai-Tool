@@ -1,23 +1,33 @@
+# app.py (Version 3 - Final & Correct Secrets Handling)
+
 import streamlit as st
 from langchain_google_genai import GoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_pinecone import PineconeVectorStore
 from langchain.prompts import PromptTemplate
 from langchain.schema.runnable import RunnablePassthrough
 from langchain.schema.output_parser import StrOutputParser
+import os
 
-# --- Konfiguration ---
+# --- Konfiguration & Secrets ---
 st.set_page_config(page_title="Franchise KI-Assistent", layout="wide")
 st.title("🤖 Franchise Handbuch KI-Assistent")
 
-# API-Schlüssel aus Streamlit Secrets laden (unverändert)
+# API-Schlüssel aus Streamlit Secrets laden und als Umgebungsvariablen setzen
+# Dies ist der entscheidende, korrigierte Teil
+PINECONE_API_KEY = st.secrets.get("PINECONE_API_KEY")
+PINECONE_ENVIRONMENT = st.secrets.get("PINECONE_ENVIRONMENT")
 PINECONE_INDEX_NAME = st.secrets.get("PINECONE_INDEX_NAME")
 GOOGLE_API_KEY = st.secrets.get("GOOGLE_API_KEY")
+
+# Setze die Umgebungsvariablen, damit LangChain sie finden kann
+os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+os.environ["PINECONE_ENVIRONMENT"] = PINECONE_ENVIRONMENT
 
 # --- RAG Kette initialisieren ---
 @st.cache_resource
 def get_rag_chain():
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-004", google_api_key=GOOGLE_API_KEY)
-    # Wichtig: Nutze denselben Namespace wie der Indexer
+    
     vectorstore = PineconeVectorStore.from_existing_index(
         index_name=PINECONE_INDEX_NAME, 
         embedding=embeddings, 
