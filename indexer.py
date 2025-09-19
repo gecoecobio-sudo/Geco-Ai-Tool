@@ -45,18 +45,21 @@ def main():
     
     docs_to_update = loader.load()
 
-    if not docs_to_update:
+  if not docs_to_update:
         print("Keine geänderten Dokumente in Notion gefunden. Prozess beendet.")
         return
 
     print(f"{len(docs_to_update)} geänderte Dokumente gefunden. Werden verarbeitet...")
 
-    # 2. Initialisiere Vektor-Store
+    # 2. Initialisiere Vektor-Store direkt mit der LangChain-Methode
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-004", google_api_key=GOOGLE_API_KEY)
+    
+    # Diese Methode ist der moderne Weg, sich mit einem existierenden Index zu verbinden
     vectorstore = PineconeVectorStore.from_existing_index(
         index_name=PINECONE_INDEX_NAME, 
         embedding=embeddings, 
         namespace="handbuch-api-mvp"
+        # Pinecone API Key & Environment werden hier automatisch aus den Umgebungsvariablen gelesen
     )
 
     # 3. Teile Dokumente und füge sie hinzu (Upsert)
