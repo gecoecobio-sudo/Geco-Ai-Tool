@@ -52,7 +52,7 @@ def main():
     print(f"{len(docs_to_update)} geänderte Dokumente gefunden. Werden verarbeitet...")
 
     # 2. Initialisiere Vektor-Store direkt mit der LangChain-Methode
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-004", google_api_key=GOOGLE_API_KEY)
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=GOOGLE_API_KEY)
     
     # Diese Methode ist der moderne Weg, sich mit einem existierenden Index zu verbinden
     vectorstore = PineconeVectorStore.from_existing_index(
