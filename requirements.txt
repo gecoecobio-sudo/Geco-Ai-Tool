@@ -1,8 +1,8 @@
-# requirements.txt (Version 4 - Final)
+# requirements.txt (Version 5 - Final & Clean)
 
 streamlit
 google-generativeai
-pinecone>=3.2.2,<4.0.0  # Spezifiziert eine kompatible Version von pinecone
+pinecone>=3.2.2,<4.0.0
 langchain-pinecone
 langchain-google-genai
 langchain
