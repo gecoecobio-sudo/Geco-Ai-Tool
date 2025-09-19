@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from langchain_community.document_loaders import NotionDBLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_pinecone import PineconeVectorStore
+from langchain_pinecone.vectorstores import PineconeVectorStore
 
 # Lädt die API-Schlüssel aus den GitHub Actions Secrets
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
