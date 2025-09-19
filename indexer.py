@@ -1,12 +1,11 @@
-# indexer.py (Version 3 - mit korrekter Einrückung)
+# indexer.py (Final Version)
 
 import os
-import pinecone
 from datetime import datetime, timezone
 from langchain_community.document_loaders import NotionDBLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
-from langchain_pinecone.vectorstores import PineconeVectorStore
+from langchain_pinecone.vectorstores import Pinecone
 
 # Lädt die API-Schlüssel aus den GitHub Actions Secrets
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
@@ -20,6 +19,7 @@ NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
 LAST_RUN_FILE = "last_run_timestamp.txt"
 
 def get_last_run_timestamp():
+    """Liest den Zeitstempel des letzten erfolgreichen Laufs."""
     try:
         with open(LAST_RUN_FILE, "r") as f:
             return datetime.fromisoformat(f.read().strip())
@@ -27,15 +27,17 @@ def get_last_run_timestamp():
         return datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 def set_last_run_timestamp(start_time):
+    """Schreibt den aktuellen Zeitstempel in die Datei."""
     with open(LAST_RUN_FILE, "w") as f:
         f.write(start_time.isoformat())
 
 def main():
+    """Führt den intelligenten Indexierungs-Prozess aus."""
     start_time = datetime.now(timezone.utc)
     last_run_time = get_last_run_timestamp()
     print(f"Starte Indexer... Letzter Lauf war am: {last_run_time.isoformat()}")
 
-    # 1. Lade Dokumente aus der Notion Datenbank
+    # 1. Lade nur die geänderten Dokumente aus der Notion Datenbank
     loader = NotionDBLoader(
         integration_token=NOTION_TOKEN,
         database_id=NOTION_DATABASE_ID,
@@ -50,29 +52,31 @@ def main():
 
     print(f"{len(docs_to_update)} geänderte Dokumente gefunden. Werden verarbeitet...")
 
-    # 2. Initialisiere Vektor-Store
+    # 2. Initialisiere die nötigen Komponenten
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=GOOGLE_API_KEY)
     
-    vectorstore = PineconeVectorStore.from_existing_index(
+    vectorstore = Pinecone.from_existing_index(
         index_name=PINECONE_INDEX_NAME, 
         embedding=embeddings, 
         namespace="handbuch-api-mvp"
     )
 
-    # 3. Teile Dokumente und füge sie hinzu (Upsert)
+    # 3. Teile Dokumente in Abschnitte und aktualisiere den Index
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs_to_index = text_splitter.split_documents(docs_to_update)
     
-    doc_ids_to_upsert = [doc.metadata['id'] for doc in docs_to_update]
+    # Extrahiere die eindeutigen Notion-Seiten-IDs der Dokumente, die aktualisiert werden sollen
+    doc_ids_to_upsert = list(set(doc.metadata['id'] for doc in docs_to_update))
     
-    # Sicherster Weg: erst alte Chunks löschen, dann neue hinzufügen.
-    # Wir fügen die Notion-ID als Metadaten hinzu, um sie gezielt löschen zu können.
+    # Füge die Notion-Seiten-ID zu den Metadaten jedes Chunks hinzu für gezieltes Löschen
     for doc in docs_to_index:
         doc.metadata['notion_id'] = doc.metadata['id']
         
+    # Lösche alle alten Vektor-Abschnitte, die zu den geänderten Seiten gehören
     vectorstore.delete(filter={"notion_id": {"$in": doc_ids_to_upsert}})
     print(f"Alte Vektoren für {len(doc_ids_to_upsert)} Dokumente gelöscht.")
     
+    # Füge die neuen/aktualisierten Vektor-Abschnitte hinzu
     vectorstore.add_documents(docs_to_index)
     print(f"{len(docs_to_index)} neue Vektor-Abschnitte hinzugefügt.")
     
