@@ -1,4 +1,4 @@
-# .github/workflows/update_index.yml (Google Docs Version)
+# .github/workflows/update_index.yml (Optimized Google Docs Version)
 
 name: Nightly Google Docs Index Update
 
@@ -25,16 +25,18 @@ jobs:
         with:
           python-version: '3.10'
 
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Create Google OAuth credentials
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-        run: |
-          echo "$GOOGLE_CREDENTIALS" > credentials.json
 
       - name: Run Indexer
         env:
@@ -43,6 +45,7 @@ jobs:
           PINECONE_INDEX_NAME: ${{ secrets.PINECONE_INDEX_NAME }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
           GOOGLE_DOCS_ID: ${{ secrets.GOOGLE_DOCS_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python indexer.py
 
       - name: Commit and push timestamp file

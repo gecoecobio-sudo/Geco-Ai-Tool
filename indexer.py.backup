@@ -1,11 +1,9 @@
-# indexer.py (Version 11 - Google Docs with Service Account Support)
+# indexer.py (Version 10 - Google Docs Integration)
 
 import os
-import json
 from datetime import datetime, timezone
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -44,41 +42,23 @@ def get_google_docs_service():
     """Authentifiziert und gibt den Google Docs Service zurück."""
     creds = None
 
-    # 1. Versuche Service Account (für GitHub Actions)
-    service_account_info = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if service_account_info:
-        try:
-            service_account_data = json.loads(service_account_info)
-            creds = ServiceAccountCredentials.from_service_account_info(
-                service_account_data, scopes=SCOPES
+    # Prüfe vorhandene Credentials
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+
+    # Credential Refresh oder neue Autorisierung
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                "credentials.json", SCOPES
             )
-            print("Service Account Authentication erfolgreich.")
-        except Exception as e:
-            print(f"Service Account Authentication fehlgeschlagen: {e}")
+            creds = flow.run_local_server(port=0)
 
-    # 2. Fallback zu OAuth (für lokale Entwicklung)
-    if not creds:
-        # Prüfe vorhandene OAuth Credentials
-        if os.path.exists("token.json"):
-            creds = Credentials.from_authorized_user_file("token.json", SCOPES)
-
-        # OAuth Credential Refresh oder neue Autorisierung
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
-                if not os.path.exists("credentials.json"):
-                    print("Fehler: credentials.json nicht gefunden und keine Service Account Credentials verfügbar.")
-                    return None
-
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    "credentials.json", SCOPES
-                )
-                creds = flow.run_local_server(port=0)
-
-            # Credentials für zukünftige Nutzung speichern
-            with open("token.json", "w") as token:
-                token.write(creds.to_json())
+        # Credentials für zukünftige Nutzung speichern
+        with open("token.json", "w") as token:
+            token.write(creds.to_json())
 
     try:
         service = build("docs", "v1", credentials=creds)
