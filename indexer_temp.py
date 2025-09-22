@@ -1,4 +1,4 @@
-# indexer.py (Version 12 - Fixed Service Account Support)
+# indexer.py (Version 11 - Google Docs with Service Account Support)
 
 import os
 import json
@@ -58,8 +58,6 @@ def get_google_docs_service():
 
     # 2. Fallback zu OAuth (für lokale Entwicklung)
     if not creds:
-        print("Service Account nicht verfügbar, versuche OAuth...")
-
         # Prüfe vorhandene OAuth Credentials
         if os.path.exists("token.json"):
             creds = Credentials.from_authorized_user_file("token.json", SCOPES)
@@ -68,25 +66,19 @@ def get_google_docs_service():
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
-                print("OAuth Token erfolgreich erneuert.")
             else:
-                # Nur OAuth versuchen wenn credentials.json existiert
-                if os.path.exists("credentials.json"):
-                    print("Starte OAuth Flow...")
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        "credentials.json", SCOPES
-                    )
-                    creds = flow.run_local_server(port=0)
-
-                    # Credentials für zukünftige Nutzung speichern
-                    with open("token.json", "w") as token:
-                        token.write(creds.to_json())
-                    print("OAuth Authentication erfolgreich.")
-                else:
-                    print("Fehler: Keine Authentifizierung möglich.")
-                    print("Für lokale Entwicklung: credentials.json bereitstellen")
-                    print("Für GitHub Actions: GOOGLE_SERVICE_ACCOUNT_JSON Secret setzen")
+                if not os.path.exists("credentials.json"):
+                    print("Fehler: credentials.json nicht gefunden und keine Service Account Credentials verfügbar.")
                     return None
+
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    "credentials.json", SCOPES
+                )
+                creds = flow.run_local_server(port=0)
+
+            # Credentials für zukünftige Nutzung speichern
+            with open("token.json", "w") as token:
+                token.write(creds.to_json())
 
     try:
         service = build("docs", "v1", credentials=creds)
