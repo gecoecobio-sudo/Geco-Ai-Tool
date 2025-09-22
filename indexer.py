@@ -137,47 +137,27 @@ def read_structural_elements(elements):
 def get_google_docs_content(service, document_id):
     """Lädt den kompletten Inhalt eines Google Docs Dokuments inklusive aller Tabs."""
     try:
-        print(f"Lade Dokument mit ID: {document_id}")
         document = service.documents().get(documentId=document_id).execute()
         doc_title = document.get('title', 'Unbenanntes Dokument')
-        print(f"Dokument geladen: '{doc_title}'")
 
-        # Debug: Zeige Dokumentstruktur
-        print(f"Dokument Keys: {list(document.keys())}")
-
-        # Prüfe ob Tabs existieren
-        if 'tabs' in document:
-            print(f"Tabs gefunden: {len(document['tabs'])}")
-            all_tabs = get_all_tabs(document)
-        else:
-            print("Keine Tabs gefunden, verwende body direkt")
-            # Fallback: Verwende body direkt wenn keine Tabs
-            body = document.get('body', {})
-            all_tabs = [{'documentTab': {'body': body}, 'tabProperties': {'title': 'Hauptdokument'}}]
-
-        print(f"Anzahl zu verarbeitende Tabs: {len(all_tabs)}")
+        # Alle Tabs des Dokuments abrufen
+        all_tabs = get_all_tabs(document)
 
         # Dokumente für jede Tab erstellen
         tab_documents = []
 
         for i, tab in enumerate(all_tabs):
             tab_title = tab.get('tabProperties', {}).get('title', f'Tab {i+1}')
-            print(f"Verarbeite Tab {i+1}: '{tab_title}'")
 
             # DocumentTab für den Hauptinhalt
             document_tab = tab.get('documentTab', {})
             body = document_tab.get('body', {})
             content = body.get('content', [])
 
-            print(f"Tab {i+1} hat {len(content)} Inhaltselemente")
-
             # Text aus dem Tab extrahieren
             tab_text = read_structural_elements(content)
-            text_length = len(tab_text.strip())
-            print(f"Tab {i+1} extrahierter Text: {text_length} Zeichen")
 
-            if text_length > 0:  # Nur Tabs mit Inhalt hinzufügen
-                print(f"Tab {i+1} wird hinzugefügt (erste 100 Zeichen): {tab_text[:100]}")
+            if tab_text.strip():  # Nur Tabs mit Inhalt hinzufügen
                 metadata = {
                     "document_id": document_id,
                     "document_title": doc_title,
@@ -190,10 +170,7 @@ def get_google_docs_content(service, document_id):
                     page_content=tab_text,
                     metadata=metadata
                 ))
-            else:
-                print(f"Tab {i+1} übersprungen (kein Text)")
 
-        print(f"Gesamt: {len(tab_documents)} Dokumente mit Inhalt erstellt")
         return tab_documents
 
     except HttpError as err:
@@ -226,10 +203,14 @@ def main():
 
     # 3. Embeddings und Vectorstore initialisieren
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=GOOGLE_API_KEY)
+    # Verwende konfigurierbaren Namespace (Standard: leer)
+    namespace = os.environ.get("PINECONE_NAMESPACE", "")
+    print(f"Verwende Pinecone Namespace: '{namespace}' (leer = Standard)")
+    
     vectorstore = Pinecone.from_existing_index(
         index_name=PINECONE_INDEX_NAME,
         embedding=embeddings,
-        namespace="handbuch-api-mvp"
+        namespace=namespace
     )
 
     print("Schritt 3: Teile Dokumente in Abschnitte...")
