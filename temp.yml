@@ -1,6 +1,6 @@
-# .github/workflows/update_index.yml (Google Docs Version)
+# .github/workflows/update_index.yml (Finale Version)
 
-name: Nightly Google Docs Index Update
+name: Nightly Notion Index Update
 
 on:
   schedule:
@@ -12,10 +12,13 @@ on:
 jobs:
   update-index:
     runs-on: ubuntu-latest
-
+    
+    # --- ANFANG DER KORREKTUR ---
+    # Gib dem Job die Berechtigung, den Code im Repository zu ändern (für den git push).
     permissions:
       contents: write
-
+    # --- ENDE DER KORREKTUR ---
+      
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -30,21 +33,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Create Google OAuth credentials
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-        run: |
-          echo "$GOOGLE_CREDENTIALS" > credentials.json
-
       - name: Run Indexer
         env:
           PINECONE_API_KEY: ${{ secrets.PINECONE_API_KEY }}
           PINECONE_ENVIRONMENT: ${{ secrets.PINECONE_ENVIRONMENT }}
           PINECONE_INDEX_NAME: ${{ secrets.PINECONE_INDEX_NAME }}
           GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-          GOOGLE_DOCS_ID: ${{ secrets.GOOGLE_DOCS_ID }}
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+          NOTION_DATABASE_ID: ${{ secrets.NOTION_DATABASE_ID }}
         run: python indexer.py
-
+        
       - name: Commit and push timestamp file
         run: |
           git config --global user.name 'github-actions'
