@@ -1,22 +1,28 @@
-# indexer.py (Version 9 - Finale, robuste Version)
+# indexer.py (Version 10 - Google Docs Integration)
 
 import os
 from datetime import datetime, timezone
-import notion_client
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 from langchain_core.documents import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_pinecone.vectorstores import Pinecone
 
-# --- API-Schlüssel laden (unverändert) ---
+# --- API-Schlüssel laden ---
 PINECONE_API_KEY = os.environ.get("PINECONE_API_KEY")
 PINECONE_ENVIRONMENT = os.environ.get("PINECONE_ENVIRONMENT")
 PINECONE_INDEX_NAME = os.environ.get("PINECONE_INDEX_NAME")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
-NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
-NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID")
+GOOGLE_DOCS_ID = os.environ.get("GOOGLE_DOCS_ID", "1j8eZoc7xKfatazq6vAFOODXMNPbxIIgmVi_8UnZderY")
 
-# --- Zeitstempel-Funktionen (unverändert) ---
+# Google Docs API Scopes
+SCOPES = ["https://www.googleapis.com/auth/documents.readonly"]
+
+# --- Zeitstempel-Funktionen ---
 LAST_RUN_FILE = "last_run_timestamp.txt"
 
 def get_last_run_timestamp():
@@ -31,89 +37,166 @@ def set_last_run_timestamp(start_time):
     with open(LAST_RUN_FILE, "w") as f:
         f.write(start_time.isoformat())
 
-# --- Notion Lade-Funktionen (unverändert) ---
-def get_all_pages_from_notion_db(client, database_id):
-    page_summaries = []
-    has_more = True
-    start_cursor = None
-    while has_more:
-        response = client.databases.query(database_id=database_id, start_cursor=start_cursor, page_size=100)
-        page_summaries.extend(response["results"])
-        has_more = response["has_more"]
-        start_cursor = response["next_cursor"]
-    return page_summaries
+# --- Google Docs Authentication ---
+def get_google_docs_service():
+    """Authentifiziert und gibt den Google Docs Service zurück."""
+    creds = None
 
-def read_block(client, block_id):
-    response = client.blocks.children.list(block_id=block_id)
-    text = ""
-    for block in response["results"]:
-        if "type" in block:
-            block_type = block["type"]
-            if block_type in ("paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item"):
-                rich_text = block[block_type].get("rich_text", [])
-                for text_part in rich_text:
-                    if text_part.get("type") == "text":
-                        text += text_part["plain_text"] + "\n"
+    # Prüfe vorhandene Credentials
+    if os.path.exists("token.json"):
+        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+
+    # Credential Refresh oder neue Autorisierung
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(
+                "credentials.json", SCOPES
+            )
+            creds = flow.run_local_server(port=0)
+
+        # Credentials für zukünftige Nutzung speichern
+        with open("token.json", "w") as token:
+            token.write(creds.to_json())
+
+    try:
+        service = build("docs", "v1", credentials=creds)
+        return service
+    except HttpError as err:
+        print(f"Fehler beim Erstellen des Google Docs Service: {err}")
+        return None
+
+# --- Google Docs Lade-Funktionen ---
+def add_current_and_child_tabs(tab, all_tabs):
+    """Rekursiv fügt Tabs und ihre Kind-Tabs zu einer Liste hinzu."""
+    all_tabs.append(tab)
+    for child_tab in tab.get('childTabs', []):
+        add_current_and_child_tabs(child_tab, all_tabs)
+
+def get_all_tabs(doc):
+    """Gibt eine flache Liste aller Tabs im Dokument zurück."""
+    all_tabs = []
+    for tab in doc.get('tabs', []):
+        add_current_and_child_tabs(tab, all_tabs)
+    return all_tabs
+
+def read_paragraph_element(element):
+    """Extrahiert Text aus einem Paragraph-Element."""
+    text_run = element.get('textRun')
+    return text_run.get('content', '') if text_run else ''
+
+def read_structural_elements(elements):
+    """Rekursiv extrahiert Text aus strukturellen Elementen."""
+    text = ''
+    for value in elements:
+        if 'paragraph' in value:
+            paragraph_elements = value.get('paragraph', {}).get('elements', [])
+            text += ''.join(read_paragraph_element(elem) for elem in paragraph_elements)
+        elif 'table' in value:
+            # Tabellen-Inhalt extrahieren
+            table = value.get('table', {})
+            for row in table.get('tableRows', []):
+                for cell in row.get('tableCells', []):
+                    cell_content = cell.get('content', [])
+                    text += read_structural_elements(cell_content)
+        elif 'sectionBreak' in value:
+            text += '\n--- Abschnittsumbruch ---\n'
+        elif 'tableOfContents' in value:
+            text += '\n--- Inhaltsverzeichnis ---\n'
     return text
 
-# --- Hauptfunktion (MIT KORRIGIERTER TITEL-EXTRAKTION) ---
+def get_google_docs_content(service, document_id):
+    """Lädt den kompletten Inhalt eines Google Docs Dokuments inklusive aller Tabs."""
+    try:
+        document = service.documents().get(documentId=document_id).execute()
+        doc_title = document.get('title', 'Unbenanntes Dokument')
+
+        # Alle Tabs des Dokuments abrufen
+        all_tabs = get_all_tabs(document)
+
+        # Dokumente für jede Tab erstellen
+        tab_documents = []
+
+        for i, tab in enumerate(all_tabs):
+            tab_title = tab.get('tabProperties', {}).get('title', f'Tab {i+1}')
+
+            # DocumentTab für den Hauptinhalt
+            document_tab = tab.get('documentTab', {})
+            body = document_tab.get('body', {})
+            content = body.get('content', [])
+
+            # Text aus dem Tab extrahieren
+            tab_text = read_structural_elements(content)
+
+            if tab_text.strip():  # Nur Tabs mit Inhalt hinzufügen
+                metadata = {
+                    "document_id": document_id,
+                    "document_title": doc_title,
+                    "tab_title": tab_title,
+                    "tab_index": i,
+                    "last_modified": datetime.now(timezone.utc).isoformat()
+                }
+
+                tab_documents.append(Document(
+                    page_content=tab_text,
+                    metadata=metadata
+                ))
+
+        return tab_documents
+
+    except HttpError as err:
+        print(f"Fehler beim Laden des Google Docs: {err}")
+        return []
+
+# --- Hauptfunktion ---
 def main():
     start_time = datetime.now(timezone.utc)
     last_run_time = get_last_run_timestamp()
-    print(f"Starte Indexer... Suche nach Änderungen seit: {last_run_time.isoformat()}")
+    print(f"Starte Google Docs Indexer... Suche nach Änderungen seit: {last_run_time.isoformat()}")
 
-    # 1. Lade Dokumente
-    client = notion_client.Client(auth=NOTION_TOKEN)
-    page_summaries = get_all_pages_from_notion_db(client, NOTION_DATABASE_ID)
-    print(f"Schritt 1: Insgesamt {len(page_summaries)} Seiten-Zusammenfassungen aus Notion geladen.")
-    
-    # 2. Filtere Seiten und lade Inhalt
-    docs_to_update = []
-    for page in page_summaries:
-        last_edited_str = page.get('last_edited_time', '')
-        if last_edited_str:
-            last_edited_dt = datetime.fromisoformat(last_edited_str.replace('Z', '+00:00'))
-            if last_edited_dt > last_run_time:
-                page_id = page['id']
-                page_content = read_block(client, page_id)
-                
-                # --- ANFANG DER KORREKTUR ---
-                # Prüfe sicher, ob die Titel-Spalte existiert und einen Inhalt hat.
-                page_title = "Unbenannt" # Standardwert, falls kein Titel vorhanden
-                title_property = page['properties'].get('Name', {}).get('title', [])
-                if title_property:
-                    page_title = title_property[0].get('plain_text', "Unbenannt")
-                # --- ENDE DER KORREKTUR ---
-                
-                metadata = {"id": page_id, "title": page_title, "last_edited_time": last_edited_str}
-                docs_to_update.append(Document(page_content=page_content, metadata=metadata))
+    # 1. Google Docs Service initialisieren
+    service = get_google_docs_service()
+    if not service:
+        print("Fehler: Konnte Google Docs Service nicht initialisieren.")
+        return
+
+    print(f"Schritt 1: Google Docs Service erfolgreich initialisiert.")
+
+    # 2. Dokument-Inhalt laden
+    docs_to_update = get_google_docs_content(service, GOOGLE_DOCS_ID)
 
     if not docs_to_update:
-        print("Schritt 2: Keine Dokumente gefunden, die nach dem letzten Lauf geändert wurden. Prozess wird beendet.")
+        print("Schritt 2: Keine Dokumente gefunden. Prozess wird beendet.")
         set_last_run_timestamp(start_time)
         return
 
-    print(f"Schritt 2: {len(docs_to_update)} geänderte Dokumente gefunden. Werden verarbeitet...")
+    print(f"Schritt 2: {len(docs_to_update)} Tabs aus Google Docs geladen.")
 
-    # ... (Rest des Skripts ist identisch) ...
+    # 3. Embeddings und Vectorstore initialisieren
     embeddings = GoogleGenerativeAIEmbeddings(model="models/text-embedding-004", google_api_key=GOOGLE_API_KEY)
     vectorstore = Pinecone.from_existing_index(
-        index_name=PINECONE_INDEX_NAME, 
-        embedding=embeddings, 
+        index_name=PINECONE_INDEX_NAME,
+        embedding=embeddings,
         namespace="handbuch-api-mvp"
     )
+
     print("Schritt 3: Teile Dokumente in Abschnitte...")
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
     docs_to_index = text_splitter.split_documents(docs_to_update)
-    doc_ids_to_upsert = list(set(doc.metadata['id'] for doc in docs_to_update))
+
+    # Metadaten für die Indizierung vorbereiten
     for doc in docs_to_index:
-        doc.metadata['notion_id'] = doc.metadata['id']
-    print(f"Schritt 4: Lösche alte Vektoren für {len(doc_ids_to_upsert)} Dokument(e)...")
-    vectorstore.delete(filter={"notion_id": {"$in": doc_ids_to_upsert}})
+        doc.metadata['google_docs_id'] = doc.metadata['document_id']
+
+    print(f"Schritt 4: Lösche alte Vektoren für Google Docs ID: {GOOGLE_DOCS_ID}...")
+    vectorstore.delete(filter={"google_docs_id": GOOGLE_DOCS_ID})
+
     print(f"Schritt 5: Füge {len(docs_to_index)} neue Vektor-Abschnitte hinzu...")
     vectorstore.add_documents(docs_to_index)
+
     set_last_run_timestamp(start_time)
-    print(f"Index erfolgreich aktualisiert. Neuer Zeitstempel: {start_time.isoformat()}")
+    print(f"Google Docs Index erfolgreich aktualisiert. Neuer Zeitstempel: {start_time.isoformat()}")
 
 if __name__ == "__main__":
     main()

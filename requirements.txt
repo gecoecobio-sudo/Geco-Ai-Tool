@@ -1,4 +1,4 @@
-# requirements.txt (Version 5 - Final & Clean)
+# requirements.txt (Version 6 - Google Docs Integration)
 
 streamlit
 google-generativeai
@@ -7,6 +7,9 @@ langchain-pinecone
 langchain-google-genai
 langchain
 langchain_community
-notion-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
 lark
 python-dotenv
